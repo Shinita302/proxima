@@ -9,7 +9,7 @@ def main():
                 print("Signal quality is poor.")
 
             if isinstance(d, thinkgear.ThinkGearEEGPowerData):
-                print("Delta value: {}".format(d.value.delta))
+                print("Delta value: {}".format(d.value.focus))
 
 if __name__ == '__main__':
     main()
