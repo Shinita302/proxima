@@ -1,94 +1,101 @@
 import mindwave, time
+import matplotlib
+# Set backend before any other matplotlib imports
+matplotlib.use('TkAgg')  # Works well with macOS and Python 2.7
 import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image
+from collections import deque
+import sys
 
 # Initialize headset
 headset = mindwave.Headset('COM7')
 time.sleep(2)
 
-# Load images (replace with your image paths)
-alert_image_path = "uglyface.png"  # Low attention warning
-reward_image_path = "goodfocus.png"  # High attention reward
-neutral_image_path = "neutral.png"  # Default neutral image
+cumulative_focus = 0
+ticks = 0
 
-alert_image = Image.open(alert_image_path)
-reward_image = Image.open(reward_image_path)
-neutral_image = Image.open(neutral_image_path)
+# Use deque for faster append/pop operations
+max_points = 100
+x_data = deque(maxlen=max_points)
+y_data = deque(maxlen=max_points)
 
 # Initialize plot
-plt.ion()  # Turn on interactive mode
-fig, ax = plt.subplots()
-x_data, y_data = [], []
-line, = ax.plot(x_data, y_data, 'b-')  # Blue line
+fig = plt.figure(figsize=(10, 6))
+ax = fig.add_subplot(111)
+line, = ax.plot([], [], 'b-', linewidth=2)
 
 ax.set_xlabel('Time (s)')
 ax.set_ylabel('Attention Level')
-ax.set_ylim(0, 100)  # Attention values range from 0-100
+ax.set_ylim(0, 100)
 ax.set_title('Mindwave Attention Level Over Time')
+ax.grid(True, alpha=0.3)
+
+plt.ion()  # Turn on interactive mode AFTER creating the figure
+plt.show(block=False)  # Show non-blocking
 
 start_time = time.time()
-low_attention_start = None  # Track when attention falls below 20
-high_attention_start = None  # Track when attention exceeds 80
+plot_update_counter = 0
+update_frequency = 20  # Slower updates for stability
 
-# Function to display image
-def show_image(image, title):
-    plt.figure()
-    plt.imshow(image)
-    plt.axis('off')  # Hide axes
-    plt.title(title)
-    plt.show()
+print("Starting data collection... Press Ctrl+C to stop")
 
 try:
     while True:
-        time.sleep(0.1)  # Update every 100ms
+        time.sleep(0.2)  # Increased sleep time for Python 2.7 stability
         current_time = time.time() - start_time
         attention_value = headset.attention
-
-        if attention_value != 0:  # Avoid plotting invalid values
+        print(attention_value)
+        #attention_value = np.random.randint(20, 80)
+        
+        ticks += 1
+        cumulative_focus += attention_value
+        
+        if attention_value != 0:
             x_data.append(current_time)
             y_data.append(attention_value)
-
-            # Keep the last 100 points for a rolling window effect
-            if len(x_data) > 100:
-                x_data.pop(0)
-                y_data.pop(0)
-
-            # Check for prolonged low or high attention
-            if attention_value < 30:
-                if low_attention_start is None:
-                    low_attention_start = current_time
-                elif current_time - low_attention_start > 5:  # More than 5 seconds
-                    show_image(alert_image, "Pay Attention!")
-                    low_attention_start = None  # Reset timer
-                    high_attention_start = None  # Reset high attention timer
-            else:
-                low_attention_start = None  # Reset if attention rises
-
-            if attention_value > 50:
-                if high_attention_start is None:
-                    high_attention_start = current_time
-                elif current_time - high_attention_start > 5:  # More than 5 seconds
-                    show_image(reward_image, "Great Focus!")
-                    high_attention_start = None  # Reset timer
-                    low_attention_start = None  # Reset low attention timer
-            else:
-                high_attention_start = None  # Reset if attention drops
-
-            # Show neutral image if neither condition is met
-            if low_attention_start is None and high_attention_start is None:
-                show_image(neutral_image, "Keep Going!")
-
-            # Update plot
-            line.set_xdata(x_data)
-            line.set_ydata(y_data)
-            ax.relim()  # Recalculate limits
-            ax.autoscale_view()  # Rescale view
-            plt.draw()
-            plt.pause(0.01)  # Allow time for the plot to update
+            
+            # Only update plot every few iterations
+            plot_update_counter += 1
+            if plot_update_counter >= update_frequency:
+                plot_update_counter = 0
+                
+                try:
+                    # Update plot data
+                    line.set_data(list(x_data), list(y_data))
+                    if len(x_data) > 1:
+                        ax.set_xlim(x_data[0], x_data[-1])
+                    
+                    # Redraw the plot
+                    ax.relim()
+                    ax.autoscale_view()
+                    plt.draw()
+                    
+                    # Force GUI update (important for macOS)
+                    if hasattr(plt.get_current_fig_manager(), 'canvas'):
+                        plt.get_current_fig_manager().canvas.flush_events()
+                    
+                except Exception as e:
+                    print("Plot update error: {}".format(e))
+                    continue
+        
+        # Print current values every 100 iterations
+        if ticks % 100 == 0:
+            print("Time: {:.2f}s, Attention: {}, Data points: {}".format(
+                current_time, attention_value, len(x_data)))
+            # Force garbage collection occasionally
+            import gc
+            gc.collect()
 
 except KeyboardInterrupt:
-    print("Plotting stopped.")
-
-plt.ioff()  # Turn off interactive mode
-plt.show()  # Show final static plot
+    print("\nPlotting stopped by user.")
+except Exception as e:
+    print("Error occurred: {}".format(e))
+    import traceback
+    traceback.print_exc()
+finally:
+    plt.ioff()
+    try:
+        plt.close('all')
+    except:
+        pass
+    print("Cleanup completed.")
